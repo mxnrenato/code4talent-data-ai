@@ -2,6 +2,7 @@ import redis
 import json
 import psycopg2
 import os
+from decimal import Decimal
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -35,31 +36,44 @@ except Exception as e:
     exit()
 
 for message in pubsub.listen():
-    if message['type'] == 'message':
+    if message["type"] == "message":
         try:
-            data = json.loads(message['data'])
-            print(f"Mensaje recibido: {data}")
+            print("Nuevo mensaje recibido de Redis. Leyendo último registro de raw_weather_data...")
+
+            cur.execute("""
+                SELECT RAW_JSON, TIMESTAMP
+                FROM raw_weather_data
+                ORDER BY TIMESTAMP DESC
+                LIMIT 1
+            """)
+            row = cur.fetchone()
+
+            if not row:
+                print("No hay registros en raw_weather_data todavía.")
+                continue
+
+            raw_json, ts = row
+            data = json.loads(raw_json)
+
+            latitude = Decimal(str(data.get("latitude", 0)))
+            longitude = Decimal(str(data.get("longitude", 0)))
+            temperature = Decimal(str(data.get("temperature_2m", 0)))
+            humidity = Decimal(str(data.get("relative_humidity_2m", 0)))
+            wind_speed = Decimal(str(data.get("wind_speed_10m", 0)))
+            cloud_cover = Decimal(str(data.get("cloud_cover", 0)))
 
             insert_query = """
                 INSERT INTO weather_data (
                     LATITUDE, LONGITUDE, TEMPERATURE,
                     RELATIVE_HUMIDITY, WIND_SPEED, CLOUD_COVER, TIMESTAMP
-                )
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s)
             """
-            values = (
-                data['latitude'],
-                data['longitude'],
-                data['temperature_2m'],
-                data['relative_humidity_2m'],
-                data['wind_speed_10m'],
-                data['cloud_cover'],
-                data['timestamp']
-            )
-
+            values = (latitude, longitude, temperature, humidity, wind_speed, cloud_cover, ts)
             cur.execute(insert_query, values)
             conn.commit()
-            print("Datos insertados en PostgreSQL.\n")
+
+            print(f"Registro insertado en weather_data con timestamp {ts}\n")
 
         except Exception as e:
-            print(f"Error al procesar el mensaje: {e}")
+            print("Error al procesar el mensaje:", e)
+            conn.rollback()
