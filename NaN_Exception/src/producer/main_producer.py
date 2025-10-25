@@ -4,6 +4,9 @@ import json
 import time
 import os
 from dotenv import load_dotenv
+from log_util.logger_config import setup_logger
+
+logger = setup_logger(__name__, "main_producer.log")
 
 load_dotenv()
 
@@ -15,10 +18,14 @@ r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
 
 def main():
     while True:
-        data = data_call()
-        if data:
-            r.publish(REDIS_CHANNEL, json.dumps(data))
-            print("Mensaje publicado en Redis.")
+        try:
+            data = data_call()
+            if data:
+                r.publish(REDIS_CHANNEL, json.dumps(data))
+                logger.info("Mensaje publicado en Redis.")
+                logger.debug(f"Contenido del mensaje: {data}")
+        except Exception as e:
+            logger.error(f"Error durante la ejecución: {e}")
         time.sleep(15)
 
 if __name__ == "__main__":
