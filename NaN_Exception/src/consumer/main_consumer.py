@@ -4,8 +4,11 @@ import psycopg2
 import os
 from decimal import Decimal
 from dotenv import load_dotenv
+from log_util.logger_config import setup_logger
 
 load_dotenv()
+
+logger = setup_logger(__name__, "main_consumer.log")
 
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
@@ -20,7 +23,7 @@ r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
 pubsub = r.pubsub()
 pubsub.subscribe(REDIS_CHANNEL)
 
-print("Esperando mensajes en Redis...")
+logger.info("Esperando mensajes en Redis...")
 
 try:
     conn = psycopg2.connect(
@@ -31,14 +34,15 @@ try:
         password=POSTGRES_PASSWORD
     )
     cur = conn.cursor()
+    logger.info("Conexión a PostgreSQL exitosa.")
 except Exception as e:
-    print("Error al conectar con PostgreSQL:", e)
-    exit()
+    logger.error("Error al conectar con PostgreSQL: %s", e)
+    exit(1)
 
 for message in pubsub.listen():
     if message["type"] == "message":
         try:
-            print("Nuevo mensaje recibido de Redis. Leyendo último registro de raw_weather_data...")
+            logger.info("Nuevo mensaje recibido. Consultando último registro en raw_weather_data...")
 
             cur.execute("""
                 SELECT RAW_JSON, TIMESTAMP
@@ -49,7 +53,7 @@ for message in pubsub.listen():
             row = cur.fetchone()
 
             if not row:
-                print("No hay registros en raw_weather_data todavía.")
+                logger.warning("No hay registros en raw_weather_data todavía.")
                 continue
 
             raw_json, ts = row
@@ -72,8 +76,8 @@ for message in pubsub.listen():
             cur.execute(insert_query, values)
             conn.commit()
 
-            print(f"Registro insertado en weather_data con timestamp {ts}\n")
+            logger.info(f"Registro insertado en weather_data con timestamp {ts}")
 
         except Exception as e:
-            print("Error al procesar el mensaje:", e)
+            logger.error("Error al procesar el mensaje: %s", e)
             conn.rollback()
