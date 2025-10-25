@@ -3,8 +3,11 @@ import redis
 import psycopg2
 import os
 from dotenv import load_dotenv
+from log_util.logger_config import setup_logger
 
 load_dotenv()
+
+logger = setup_logger(__name__, "raw_consumer.log")
 
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
@@ -19,7 +22,7 @@ r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
 pubsub = r.pubsub()
 pubsub.subscribe(REDIS_CHANNEL)
 
-print("Esperando mensajes en Redis...")
+logger.info("Esperando mensajes en Redis...")
 
 try:
     conn = psycopg2.connect(
@@ -31,14 +34,14 @@ try:
     )
     cur = conn.cursor()
 except Exception as e:
-    print("Error al conectar con PostgreSQL:", e)
+    logger.error("Error al conectar con PostgreSQL:", e)
     exit()
 
 for message in pubsub.listen():
     if message['type'] == 'message':
         try:
             data = message['data']
-            print(f"Mensaje recibido: {data}")
+            logger.info(f"Mensaje recibido: {data}")
 
             insert_query = """
                 INSERT INTO raw_weather_data (
@@ -49,9 +52,8 @@ for message in pubsub.listen():
 
             cur.execute(insert_query, (data,datetime.now()))
             conn.commit()
-            print("Datos insertados en PostgreSQL.\n")
+            logger.info("Datos insertados en PostgreSQL.\n")
 
         except Exception as e:
-            print(f"Error al procesar el mensaje: {e}")
+            logger.info(f"Error al procesar el mensaje: {e}")
 
- 
