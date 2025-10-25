@@ -1,3 +1,4 @@
+version: '3.9'
 
 services:
   postgres:
@@ -14,12 +15,47 @@ services:
       - ./database:/docker-entrypoint-initdb.d/
     networks:
       - realtime_net
-  
+
   redis:
     image: redis:7
     container_name: redis_container
     ports:
       - "${REDIS_PORT}:6379"
+    networks:
+      - realtime_net
+
+  producer:
+    build: .
+    depends_on:
+      - redis
+    environment:
+      - REDIS_HOST=redis
+      - PYTHONPATH=/app/src
+    command: python src/producer/main_producer.py
+    networks:
+      - realtime_net
+
+  raw_consumer:
+    build: .
+    depends_on:
+      - producer
+    environment:
+      - REDIS_HOST=redis
+      - POSTGRES_HOST=postgres
+      - PYTHONPATH=/app/src
+    command: python src/raw_consumer/raw_consumer.py
+    networks:
+      - realtime_net
+
+  main_consumer:
+    build: .
+    depends_on:
+      - raw_consumer
+    environment:
+      - REDIS_HOST=redis
+      - POSTGRES_HOST=postgres
+      - PYTHONPATH=/app/src
+    command: python src/consumer/main_consumer.py
     networks:
       - realtime_net
 
